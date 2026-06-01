@@ -109,7 +109,7 @@ void Plugin::on_auction_items_received(
   as2_msgs::msg::Bid bid;
   for (const auto & item : auction_items_) {
     const std::string & name = item->get_name();
-    const double cost = static_cast<double>(item->evaluate(current_pose_));
+    const double cost = static_cast<double>(item->evaluate(state_interface_));
     my_costs_[name] = cost;
     bid.name.push_back(name);
     bid.amounts.push_back(cost);

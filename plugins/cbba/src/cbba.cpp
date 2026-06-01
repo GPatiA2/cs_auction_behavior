@@ -105,12 +105,12 @@ void Plugin::on_auction_items_received(
 {
   AuctionBehaviorPluginBase::on_auction_items_received(msg, agent_id);
 
-  node_->get_parameter("bundle_size", bundle_size_);
+  node_ptr_->get_parameter("bundle_size", bundle_size_);
   bundle_size_ = std::max(1, bundle_size_);
 
   for (const auto & item : auction_items_) {
     const std::string & name = item->get_name();
-    costs_[name] = static_cast<double>(item->evaluate(current_pose_));
+    costs_[name] = static_cast<double>(item->evaluate(state_interface_));
     y_[name] = std::numeric_limits<double>::infinity();
     z_[name] = "";
   }
