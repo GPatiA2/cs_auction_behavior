@@ -1,6 +1,6 @@
 # auction_behavior
 
-Distributed multi-robot task allocation behavior for multi-agent systems built with [Aerostack2](https://github.com/aerostack2/aerostack2), using a plugin-based auction architecture and inter-agent communication via [as2_ca](https://github.com/CoreSenseEU/collective_awareness_structure).
+Distributed multi-robot task allocation behavior for multi-agent systems built with [Aerostack2](https://github.com/GPatiA2/aerostack2), using a plugin-based auction architecture and inter-agent communication via [as2_ca](https://github.com/CoreSenseEU/collective_awareness_structure).
 
 ## Overview
 
