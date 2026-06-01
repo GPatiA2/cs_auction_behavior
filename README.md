@@ -1,10 +1,75 @@
 # auction_behavior
 
-Distributed multi-robot task allocation behavior for multi-agent systems built with [Aerostack2](https://github.com/GPatiA2/aerostack2), using a plugin-based auction architecture and inter-agent communication via [as2_ca](https://github.com/CoreSenseEU/collective_awareness_structure).
+Distributed multi-robot task allocation behavior built on the [cs4home architecture](https://github.com/CoreSenseEU/cs4home_architecture), using a plugin-based auction algorithm and inter-agent communication via [ca_structure](../collective_awareness_structure).
+
+## cs4home Architecture
+
+`AuctionBehavior` is a **CognitiveModule** — it extends `cs4home_core::CognitiveModule`, which is itself a `CascadeLifecycleNode`. Following the cs4home pattern, `on_configure()` creates and wires two sub-components:
+
+```
+AuctionBehavior  (cs4home_core::CognitiveModule)
+├── AuctionBehaviorAfferent  (cs4home_core::Afferent)
+│     └── subscribes to self_localization/pose in ONDEMAND mode
+└── AuctionBehaviorCore      (cs4home_core::Core)
+      ├── ROS 2 action server  (as2_msgs/action/Auction)
+      ├── Auction algorithm plugin (pluginlib)
+      ├── Item evaluation plugin  (pluginlib)
+      └── CAGatewayClient  (ca_structure) ← inter-agent channel
+```
+
+The lifecycle transitions (`configure` → `activate` → `deactivate`) propagate from the CognitiveModule down to both the Afferent and Core, keeping the component graph in sync.
+
+```cpp
+// auction_behavior.cpp — on_configure() wires the graph
+afferent_ = std::make_shared<AuctionBehaviorAfferent>(self);
+afferent_->configure();                          // subscribes to state topics
+
+auto core = std::make_shared<AuctionBehaviorCore>(self);
+core->set_afferent(afferent_);                   // Core can pull state from Afferent
+core->configure();                               // loads plugins, registers CA gateway
+core_ = core;
+```
+
+### Afferent: state access
+
+`AuctionBehaviorAfferent` uses `cs4home_core::Afferent::ONDEMAND` mode so the Core can read the drone's latest pose at any point during execution:
+
+```cpp
+// Inside AuctionBehaviorCore::configure():
+afferent_->set_mode(
+  0,                               // topic index for self_localization/pose
+  cs4home_core::Afferent::ONDEMAND,
+  nullptr);                        // no immediate callback — polled on demand
+
+// Later, when computing a bid:
+auto pose_msg = afferent_->get_msg<geometry_msgs::msg::PoseStamped>("self_localization/pose");
+```
+
+### Core: action server + inter-agent comms
+
+`AuctionBehaviorCore` creates a `ca_structure::CAGatewayClient` attached to the parent lifecycle node. The client registers for the inter-agent message types the auction needs:
+
+```cpp
+#include "ca_structure/ca_gateway_client.hpp"
+
+ca_client_.register_module<as2_msgs::msg::StartAuction>(
+  "auction_item_array", "auction_behavior",
+  [this](const as2_msgs::msg::StartAuction & msg, const std::string & sender) {
+    auction_plugin_->on_auction_items_received(msg.items, sender);
+  });
+
+ca_client_.register_module<as2_msgs::msg::Bid>(
+  "bid", "auction_behavior",
+  [this](const as2_msgs::msg::Bid & msg, const std::string & sender) {
+    auction_plugin_->update(msg, sender);
+  });
+```
+
+---
 
 ## Overview
 
-Each drone runs an independent `AuctionBehavior` node. One drone acts as **auctioneer** — it receives an action goal listing the tasks and participants, broadcasts a `StartAuction` message via `as2_ca`, and kicks off the first bid. Every other drone acts as a **participant** — it receives the `StartAuction` message, computes its costs, and joins the bidding round. All bids travel over the inter-agent channel so no shared memory or central coordinator is required.
+Each drone runs an independent `AuctionBehavior` node. One drone acts as **auctioneer** — it receives an action goal listing the tasks and participants, broadcasts a `StartAuction` message via `ca_structure`, and kicks off the first bid. Every other drone acts as a **participant** — it receives the `StartAuction` message, computes its costs, and joins the bidding round. All bids travel over the inter-agent channel so no shared memory or central coordinator is required.
 
 ```
 Drone A (auctioneer)                       Drone B (participant)
@@ -25,26 +90,43 @@ Task items (e.g. 2-D coordinates) are handled by a separate **item plugin** that
 
 ## Installation
 
-### 1. Build the required Aerostack2 packages
+### 1. Build the required packages
 
-Clone the [GPatiA2/aerostack2](https://github.com/GPatiA2/aerostack2) fork and build only the packages this behavior depends on:
+Both `cs4home_core` (architecture framework) and `ca_structure` (inter-agent communication) must be built first:
+
+```bash
+# cs4home architecture
+mkdir -p ~/cs4home_ws/src
+cd ~/cs4home_ws/src
+git clone https://github.com/CoreSenseEU/cs4home_architecture.git
+cd ~/cs4home_ws
+colcon build --packages-select cs4home_core
+
+# collective awareness / inter-agent messaging
+cd ~/cs4home_ws/src
+git clone <collective_awareness_structure-repository>
+cd ~/cs4home_ws
+colcon build --packages-select ca_msgs ca_structure
+```
+
+Build the required Aerostack2 message package:
 
 ```bash
 mkdir -p ~/aerostack2_ws/src
 cd ~/aerostack2_ws/src
 git clone https://github.com/GPatiA2/aerostack2.git
 cd ~/aerostack2_ws
-colcon build --packages-select as2_msgs as2_core as2_behavior as2_ca
+colcon build --packages-select as2_msgs
 ```
 
 Required packages:
 
 | Package | Role |
 |---|---|
-| `as2_msgs` | ROS 2 message and action definitions |
-| `as2_core` | Node base class, state interface, knowledge base client |
-| `as2_behavior` | Behavior server framework (`BehaviorServer<A>`) |
-| `as2_ca` | Collective Awareness gateway client for inter-agent communication |
+| `cs4home_core` | CognitiveModule base class, Core, Afferent lifecycle framework |
+| `ca_structure` | `CAGatewayClient` for inter-agent communication |
+| `ca_msgs` | `InterAgentMessage`, `LocalGenericMessage`, `RegisterModule` service |
+| `as2_msgs` | `Auction` action, `Bid`, `StartAuction`, `AuctionItem` message types |
 
 ### 2. Build this package
 
@@ -53,13 +135,14 @@ mkdir -p ~/cs_test_ws/src
 cd ~/cs_test_ws/src
 git clone <this-repository>
 cd ~/cs_test_ws
+source ~/cs4home_ws/install/setup.bash
 source ~/aerostack2_ws/install/setup.bash
 colcon build --packages-select auction_behavior
 ```
 
 ## AuctionBehavior node
 
-The behavior server that manages the full auction lifecycle — plugin loading, auctioneer/participant role selection, bid convergence detection, and result publication to the knowledge base.
+The behavior server that manages the full auction lifecycle — plugin loading, auctioneer/participant role selection, bid convergence detection, and result publication.
 
 ### Running the node
 
@@ -96,7 +179,7 @@ ros2 run auction_behavior auction_behavior_node --ros-args \
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | `string` | Auction identifier (stored in KB) |
+| `name` | `string` | Auction identifier |
 | `type` | `string` | Item plugin type (e.g. `coordinate_item`) |
 | `elements` | `AuctionItem[]` | Task items with names and feature vectors |
 | `bidders` | `string[]` | Namespace list of all participating drones |
@@ -108,7 +191,7 @@ ros2 run auction_behavior auction_behavior_node --ros-args \
 | `winners` | `string[]` | Winning drone namespace per task (same order as `elements`) |
 | `elements` | `AuctionItem[]` | Full item list (mirrors goal for convenience) |
 
-### Inter-agent messages (via as2_ca)
+### Inter-agent messages (via ca_structure)
 
 | Type key | ROS message | Direction | Description |
 |---|---|---|---|
@@ -121,10 +204,10 @@ ros2 run auction_behavior auction_behavior_node --ros-args \
 Action goal (auctioneer)
         │
         ▼
-  StartAuction ──(as2_ca)──► all participants
+  StartAuction ──(ca_structure)──► all participants
         │
         ▼
-  Bid (own costs) ──(as2_ca)──► all peers
+  Bid (own costs) ──(ca_structure)──► all peers
         │
         ▼
   on_bid_received → update() → solve_conflicts()
