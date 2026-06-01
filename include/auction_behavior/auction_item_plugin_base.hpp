@@ -28,7 +28,7 @@
 
 /*!*******************************************************************************************
  *  \file       auction_item_plugin_base.hpp
- *  \brief      auction item plugin base header file
+ *  \brief      Auction item plugin base (cs4home version)
  *  \authors    Guillermo GP-Lenza
  ********************************************************************************************/
 
@@ -37,10 +37,9 @@
 
 #include <memory>
 #include <string>
-#include <unordered_map>
 
-#include "as2_core/state_interface.hpp"
 #include "as2_msgs/msg/auction_item.hpp"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 namespace as2_auction_behavior
 {
@@ -53,8 +52,9 @@ public:
   virtual std::shared_ptr<AuctionItemPluginBase> create(
     const as2_msgs::msg::AuctionItem & item_msg) const = 0;
 
+  // Evaluate the cost/utility of this item given the agent's current pose.
   virtual float evaluate(
-    const StateInterface & state_interface) const = 0;
+    const geometry_msgs::msg::PoseStamped & current_pose) const = 0;
 
   virtual std::string get_name() const = 0;
 
