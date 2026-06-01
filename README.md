@@ -25,18 +25,37 @@ Task items (e.g. 2-D coordinates) are handled by a separate **item plugin** that
 
 ## Installation
 
+### 1. Build the required Aerostack2 packages
+
+Clone the [GPatiA2/aerostack2](https://github.com/GPatiA2/aerostack2) fork and build only the packages this behavior depends on:
+
 ```bash
+mkdir -p ~/aerostack2_ws/src
+cd ~/aerostack2_ws/src
+git clone https://github.com/GPatiA2/aerostack2.git
+cd ~/aerostack2_ws
+colcon build --packages-select as2_msgs as2_core as2_behavior as2_ca
+```
+
+Required packages:
+
+| Package | Role |
+|---|---|
+| `as2_msgs` | ROS 2 message and action definitions |
+| `as2_core` | Node base class, state interface, knowledge base client |
+| `as2_behavior` | Behavior server framework (`BehaviorServer<A>`) |
+| `as2_ca` | Collective Awareness gateway client for inter-agent communication |
+
+### 2. Build this package
+
+```bash
+mkdir -p ~/cs_test_ws/src
 cd ~/cs_test_ws/src
 git clone <this-repository>
 cd ~/cs_test_ws
 source ~/aerostack2_ws/install/setup.bash
 colcon build --packages-select auction_behavior
 ```
-
-Dependencies (provided by Aerostack2):
-
-- `as2_core`, `as2_behavior`, `as2_msgs`, `as2_ca`
-- `pluginlib`, `rclcpp`, `geometry_msgs`
 
 ## AuctionBehavior node
 
